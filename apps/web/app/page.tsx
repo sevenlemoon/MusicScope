@@ -1,24 +1,45 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import ConcertPanel from "./ConcertPanel";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PageFrame from "./PageFrame";
 import PlaylistImport from "./PlaylistImport";
+import { MagneticLink, Reveal, SpotlightCard } from "./Kinetic";
 import { useI18n } from "./i18n";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-type Profile = { summary: { unique_artists?: number; unique_tracks?: number; completion_rate?: number; replays?: number }; artists: { name: string }[]; genres: { name: string }[] };
-type Recommendation = { title: string; artist: string; role: string; explanation_evidence: { text: string }[] };
-type LibraryTrack = { track_id: string; title: string; artist?: string | null };
+type LibraryTrack = { track_id: string; artist_id?: string | null; genres?: string[] };
 
 export default function Home() {
   const { t } = useI18n();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [library, setLibrary] = useState<LibraryTrack[]>([]);
-  useEffect(() => {
-    void Promise.all([fetch(`${API_URL}/api/v1/profile`).then((response) => response.ok ? response.json() : null), fetch(`${API_URL}/api/v1/library`).then((response) => response.ok ? response.json() : []), fetch(`${API_URL}/api/v1/recommendations?exploration_level=50&limit=4`).then((response) => response.ok ? response.json() : null)]).then(([profileData, libraryData, recommendationData]) => { setProfile(profileData?.long_term ?? null); setLibrary(libraryData ?? []); setRecommendations(recommendationData?.recommendations ?? []); });
+  const visualRef = useRef<HTMLDivElement>(null);
+  const refreshLibrary = useCallback(async () => {
+    const response = await fetch(`${API_URL}/api/v1/library`);
+    if (!response.ok) throw new Error("library refresh failed");
+    setLibrary(await response.json());
   }, []);
-  return <PageFrame title={t("home.title")}><section className="home-hero"><p className="eyebrow">{t("home.heroKicker")}</p><p className="intro home-subtitle">{t("home.subtitle")}</p><PlaylistImport onImported={() => window.location.reload()} /></section>{library.length > 0 && <section className="home-overview"><div><p className="eyebrow">{t("home.libraryOverview")}</p><h2>{library.length} {t("profile.libraryTracks")}</h2></div><div><strong>{profile?.summary.unique_artists ?? 0}</strong><span>{t("profile.artists")}</span></div><div><strong>{profile?.artists.slice(0, 3).map((artist) => artist.name).join(" · ") || t("profile.none")}</strong><span>{t("profile.topArtists")}</span></div><Link className="text-link" href="/my-music">{t("home.open")}</Link></section>}<section className="home-grid"><section className="home-feature panel"><h2>{t("home.forYou")}</h2>{recommendations.length ? recommendations.map((item) => <div className="preview-row" key={`${item.artist}-${item.title}`}><strong>{item.title}</strong><span>{item.artist}</span></div>) : <p className="muted">{t("recommendation.noCandidates")}</p>}<Link className="text-link" href="/for-you">{t("home.open")}</Link></section><section className="panel"><h2>{t("home.concerts")}</h2><ConcertPanel compact /></section><section className="panel lab-card"><h2>{t("home.audio")}</h2><p className="muted">{t("home.audioDescription")}</p><Link className="text-link" href="/lab">{t("home.labCta")}</Link></section></section></PageFrame>;
+  useEffect(() => { void refreshLibrary().catch(() => setLibrary([])); }, [refreshLibrary]);
+  const stats = useMemo(() => ({ tracks: new Set(library.map((item) => item.track_id)).size, artists: new Set(library.map((item) => item.artist_id).filter(Boolean)).size, genres: new Set(library.flatMap((item) => item.genres ?? [])).size }), [library]);
+  const moveVisual = (event: React.PointerEvent<HTMLElement>) => {
+    if (!visualRef.current || !window.matchMedia("(prefers-reduced-motion: no-preference)").matches) return;
+    visualRef.current.style.setProperty("--parallax-x", `${(event.clientX / window.innerWidth - 0.5) * 14}px`);
+    visualRef.current.style.setProperty("--parallax-y", `${(event.clientY / window.innerHeight - 0.5) * 10}px`);
+  };
+  const features = [
+    { number: "01", label: "DISCOVER", title: t("nav.forYou"), body: t("v3.featureDiscover"), href: "/for-you", className: "feature-discover" },
+    { number: "02", label: "LIVE", title: t("nav.concerts"), body: t("v3.featureLive"), href: "/concerts", className: "feature-live" },
+    { number: "03", label: "LIBRARY", title: t("nav.myMusic"), body: t("v3.featureLibrary"), href: "/my-music", className: "feature-library" },
+    { number: "04", label: "STEMS", title: t("nav.lab"), body: t("v3.featureStems"), href: "/lab", className: "feature-stems" },
+  ];
+  return <PageFrame title={t("home.title")}><section className="v3-hero" onPointerMove={moveVisual}>
+    <div className="hero-copy"><p className="chapter-label">MUSICSCOPE / PERSONAL MUSIC INTELLIGENCE</p><p className="hero-english">YOUR MUSIC,<br /><em>A WIDER WORLD.</em></p><h1>{t("v3.heroTitle")}</h1><p className="hero-lede">{t("v3.heroBody")}</p><MagneticLink href={stats.tracks ? "/for-you" : "#import"}>{t("v3.start")}</MagneticLink></div>
+    <div className="hero-visual" ref={visualRef}><div className="vinyl-ring"><span>MS</span></div><div className="waveform">{Array.from({ length: 28 }, (_, index) => <i key={index} style={{ height: `${22 + ((index * 37) % 70)}%` }} />)}</div><b>03</b><small>SCOPE / SOUND / SELF</small></div>
+    <div className="hero-stats" aria-label={t("v3.libraryStats")}><Stat value={stats.tracks} label="TRACKS" /><Stat value={stats.artists} label="ARTISTS" /><Stat value={stats.genres || "—"} label="GENRES" /></div>
+  </section>
+  <Reveal className="feature-chapter"><div className="section-index"><span>CORE / 04</span><h2>{t("v3.coreTitle")}</h2></div><div className="feature-grid">{features.map((feature) => <SpotlightCard key={feature.number} tilt className={`feature-entry ${feature.className}`}><span className="feature-number">{feature.number}</span><p>{feature.label}</p><h3>{feature.title}</h3><p className="muted">{feature.body}</p><MagneticLink href={feature.href}>{t("home.open")}</MagneticLink></SpotlightCard>)}</div></Reveal>
+  <Reveal className="import-chapter" ><div id="import" className="section-index"><span>IMPORT / LIBRARY</span><h2>{t("v3.importTitle")}</h2><p>{t("v3.importIntro")}</p></div><PlaylistImport onImported={refreshLibrary} /></Reveal></PageFrame>;
+}
+
+function Stat({ value, label }: { value: number | string; label: string }) {
+  return <div><strong>{value}</strong><span>{label}</span></div>;
 }

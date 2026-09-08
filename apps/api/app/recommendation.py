@@ -10,7 +10,7 @@ from .models import Artist, FeedbackEvent, Recommendation, RecommendationRun, Tr
 from .profile import calculate_profiles, refresh_relationships
 
 ROLE_NAMES = ("PRECISE_MATCH", "ADJACENT_EXPLORATION", "CROSS_BOUNDARY_DISCOVERY", "BOLD_TRY")
-SKIP_REASONS = {"TOO_LOUD", "TOO_SLOW", "DISLIKE_VOCALS", "NOT_FOR_TODAY", "SIMPLY_DISLIKE"}
+SKIP_REASONS = {"TOO_LOUD", "TOO_SLOW", "DISLIKE_VOCALS", "NOT_FOR_TODAY", "DISLIKE_ARTIST", "DISLIKE_STYLE", "SIMPLY_DISLIKE"}
 
 
 @dataclass(frozen=True)

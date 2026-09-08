@@ -1,6 +1,6 @@
 # MusicScope
 
-MusicScope is a local, single-user music intelligence graduation project. It will combine listening imports, explainable recommendations, taste timelines, personal memories, lightweight concert discovery, and cached two-stem audio separation.
+MusicScope is a local, single-user music intelligence graduation project focused on four honest capabilities: a personal music library, explainable recommendations, user-driven concert search, and cached two-stem audio separation.
 
 The personal user is `00000000-0000-0000-0000-000000000001`. Deterministic
 demo data belongs to the separate demo user
@@ -105,19 +105,21 @@ names, keeps clearly delimited featured artists as separate relationships, and
 does not create listening events or timestamps. Repeating the same import is
 safe for library membership; raw import batches remain as provenance.
 
-MusicScope has two intentionally separate modes. The PERSONAL user contains
-only imported personal library/history, does not invent a Timeline without
-timestamps, and does not substitute fictional concerts. The DEMO user contains
-deterministic catalog/history for demonstrating Timeline and recommendation
-behavior. They are never merged.
+MusicScope has two intentionally separate data identities. The PERSONAL user
+contains only imported personal library/history and never substitutes fictional
+concerts. The DEMO user contains a deterministic catalog/history for backend
+evaluation. They are never merged. V3's primary UI is library-first and does
+not present playlist membership as playback history.
 
-## Profile calculation
+## Recommendation and legacy profile APIs
 
 The profile API keeps long-term and short-term state separate. Long-term state uses all effective historical events plus library membership. Short-term state uses a configurable 30-day window with a 14-day exponential recency half-life and remains empty when only playlist membership is available. When `as_of` is omitted, the latest effective event is used as the reference time, which keeps the deterministic demo reproducible.
 
 `GET /api/v1/profile` calculates a read-only view and does not persist a snapshot. Deliberate snapshot persistence uses `POST /api/v1/profile/snapshots`. Recommendations are generated through `GET /api/v1/recommendations?exploration_level=50`, with feedback posted to `/api/v1/recommendations/{id}/feedback`.
 
-The evidence-first Timeline is generated deliberately with `POST /api/v1/timeline/recalculate`. It compares yearly genre/artist shares, new-artist rate, completion, skips, and listening frequency using a configurable change threshold. `GET /api/v1/timeline` is read-only. Music Memories are user-authored and managed independently through `/api/v1/memories`.
+Historical profile, Timeline, and Music Memory APIs remain available for
+backward compatibility and deterministic evaluation. They are not primary V3
+navigation features; `/timeline` redirects safely to `/my-music`.
 
 Recommendations are currently personalized library rediscovery and ranking,
 not unrestricted internet-wide music discovery. Exploration changes ranking,
@@ -132,9 +134,11 @@ effective personal relationships and never silently fall back to fictional
 events. To enable optional live Ticketmaster Discovery lookups, set
 `CONCERT_PROVIDER=ticketmaster` and provide `TICKETMASTER_API_KEY` in `.env`.
 
-The API endpoints are `GET /api/v1/concerts` for relevant artists and
-`GET /api/v1/artists/{artist_id}/concerts` for one artist. MusicScope only
-links to external event details; it does not sell tickets or process checkout.
+The V3 UI queries concerts only after the user chooses or enters an artist.
+`GET /api/v1/concerts/search?artist=...` powers that flow, with
+`GET /api/v1/artists/{artist_id}/concerts` retained for an identified artist.
+MusicScope only links to external event details; it does not sell tickets or
+process checkout.
 
 ## Data-integrity remediation
 
@@ -165,4 +169,4 @@ make web-lint
 make web-test
 ```
 
-The database health endpoint is `/health/db`; it requires PostgreSQL to be running. Recommendations, timeline, memories, concerts, and cached audio separation are available in the MVP. External concert data remains optional.
+The database health endpoint is `/health/db`; it requires PostgreSQL to be running. The V3 frontend routes are `/`, `/for-you`, `/my-music`, `/concerts`, and `/lab`. External concert data remains optional.

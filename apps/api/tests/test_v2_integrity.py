@@ -72,8 +72,11 @@ def test_demo_identity_is_separate_from_personal_identity() -> None:
         assert DEMO_USER_ID != PERSONAL_USER_ID
         assert db.scalar(select(func.count(UserTrackRelationship.id)).where(UserTrackRelationship.user_id == DEMO_USER_ID)) > 0
         assert db.scalar(select(func.count(UserTrackRelationship.id)).where(UserTrackRelationship.user_id == PERSONAL_USER_ID, UserTrackRelationship.discovery_source == "deterministic-demo")) == 0
-        assert generate_recommendations(db, PERSONAL_USER_ID, 50, 12)[1] == []
-        assert relevant_artists(db, PERSONAL_USER_ID) == []
+        _, recommendations = generate_recommendations(db, PERSONAL_USER_ID, 50, 12)
+        recommended_ids = {item.track_id for item in recommendations}
+        leaked = db.scalar(select(func.count(UserTrackRelationship.id)).where(UserTrackRelationship.user_id == PERSONAL_USER_ID, UserTrackRelationship.track_id.in_(recommended_ids or [None]), UserTrackRelationship.discovery_source == "deterministic-demo"))
+        assert leaked == 0
+        assert all(not artist.canonical_name.startswith("Demo Artist ") for artist in relevant_artists(db, PERSONAL_USER_ID))
     finally:
         db.close()
 

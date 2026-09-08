@@ -33,3 +33,4 @@ cookies/
 **/credentials/
 **/cookies/
 apps/api/.alembic/
+.logs/

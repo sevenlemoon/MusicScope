@@ -1,52 +1,46 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useState } from "react";
-import { formatConcertDate, formatConcertTime, shouldShowConcertLink } from "./concerts";
+import { useEffect, useMemo, useState } from "react";
+import { concertProviderLabel, formatConcertDate, formatConcertTime, shouldShowConcertLink } from "./concerts";
+import { SpotlightCard } from "./Kinetic";
 import { useI18n } from "./i18n";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-type Concert = { id: string; artist: string; provider?: string; event_name?: string | null; date: string; time?: string | null; doors_time?: string | null; timezone?: string | null; venue?: string | null; city?: string | null; region?: string | null; country?: string | null; external_url?: string | null; image_url?: string | null; is_demo: boolean };
-type ConcertResponse = { events: Concert[]; artists: { name: string; event_count: number; provider_status: string; source: string; stale: boolean }[] };
+type Concert = { id: string; artist: string; provider?: string; event_name?: string | null; date: string; time?: string | null; timezone?: string | null; venue?: string | null; city?: string | null; region?: string | null; country?: string | null; external_url?: string | null; image_url?: string | null; is_demo: boolean };
+type ArtistOption = { id: string; name: string; track_count: number };
+type SearchResult = { events: Concert[]; provider_status: string; stale: boolean };
 
-export default function ConcertPanel({ compact = false }: { compact?: boolean }) {
+export default function ConcertPanel() {
   const { language, t } = useI18n();
-  const [data, setData] = useState<ConcertResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [artists, setArtists] = useState<ArtistOption[]>([]);
+  const [query, setQuery] = useState("");
+  const [result, setResult] = useState<SearchResult | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [artistQuery, setArtistQuery] = useState("");
-  const [demoMode, setDemoMode] = useState(false);
 
-  useEffect(() => {
-    fetch(compact ? `${API_URL}/api/v1/concerts/search?artist=milet${demoMode ? "&demo=true" : ""}` : `${API_URL}/api/v1/concerts${demoMode ? "?demo=true" : ""}`)
-      .then((response) => { if (!response.ok) throw new Error("concert lookup failed"); return response.json(); })
-      .then((value) => compact ? setData({ events: value.events, artists: [{ ...value.artist, event_count: value.events.length, provider_status: value.provider_status, source: value.source, stale: value.stale }] }) : setData(value as ConcertResponse))
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [compact, demoMode]);
-
-  const search = async () => {
-    if (!artistQuery.trim()) return;
-    setLoading(true); setError(false);
+  const searchArtist = async (name: string) => {
+    if (!name.trim()) return;
+    setQuery(name); setLoading(true); setError(false); setResult(null);
     try {
-      const response = await fetch(`${API_URL}/api/v1/concerts/search?artist=${encodeURIComponent(artistQuery)}${demoMode ? "&demo=true" : ""}`);
+      const response = await fetch(API_URL + "/api/v1/concerts/search?artist=" + encodeURIComponent(name.trim()));
       if (!response.ok) throw new Error("concert search failed");
-      const result = await response.json();
-      setData({ events: result.events, artists: [{ ...result.artist, event_count: result.events.length, provider_status: result.provider_status, source: result.source, stale: result.stale }] });
-    } catch { setError(true); }
-    finally { setLoading(false); }
+      setResult(await response.json());
+    } catch { setError(true); } finally { setLoading(false); }
   };
 
-  return <section id="discover" className="panel concert-panel">
-    <div className="concert-heading"><div><p className="eyebrow">{t("concert.eyebrow")}</p><h2>{t("concert.title")}</h2><p className="muted">{t("concert.description")}</p></div></div>
-    {!compact && <div className="concert-search"><input aria-label={t("concert.searchPlaceholder")} placeholder={t("concert.searchPlaceholder")} value={artistQuery} onChange={(event) => setArtistQuery(event.target.value)} /><button type="button" onClick={() => void search()} disabled={loading}>{loading ? t("concert.searching") : t("concert.searchButton")}</button></div>}
-    {loading && <p className="muted">{t("concert.loading")}</p>}
-    {error && <p className="muted">{t("concert.error")}</p>}
-    {!loading && !error && data?.artists.some((artist) => artist.provider_status === "provider_unavailable") && <p className="muted">{t("concert.providerUnavailable")}</p>}
-    {!loading && !error && data?.artists.some((artist) => artist.provider_status === "provider_unavailable") && !demoMode && <button type="button" className="secondary-button" onClick={() => setDemoMode(true)}>{t("concert.demo")}</button>}
-    {demoMode && <p className="demo-note">{t("concert.demo")}</p>}
-    {!loading && !error && data?.artists.some((artist) => artist.stale) && <p className="muted">{t("concert.stale")}</p>}
-    {!loading && !error && data && data.events.length === 0 && <p className="muted">{t("concert.none")}</p>}
-    <div className="concert-grid">{data?.events.map((event) => <article className="concert-card" key={event.id}>{event.image_url ? <img className="concert-image" src={event.image_url} alt="" /> : <div className="concert-image-placeholder" aria-hidden="true" />}<p className="role">{event.artist}</p><h3>{event.event_name ?? t("concert.title")}</h3><strong>{formatConcertDate(event.date)}</strong><p className="muted">{event.doors_time ? `${language === "zh" ? "开场" : "Doors"} ${event.doors_time} · ` : ""}{formatConcertTime(event.time ?? null, event.timezone ?? null)}</p><p>{[event.venue, event.city, event.region, event.country].filter(Boolean).join(" · ") || t("concert.venueUnavailable")}</p><small className="demo-note">{event.is_demo ? t("concert.demo") : event.provider === "official_milet" ? (language === "zh" ? "官方网站" : "Official site") : "Ticketmaster"}</small>{shouldShowConcertLink(event) && <a className="details-link" href={event.external_url!} target="_blank" rel="noreferrer">{t("concert.details")}</a>}</article>)}</div>
+  useEffect(() => {
+    void fetch(API_URL + "/api/v1/library/artists").then((response) => response.ok ? response.json() : []).then(setArtists).catch(() => setArtists([]));
+    const initial = new URLSearchParams(window.location.search).get("artist");
+    if (initial) void searchArtist(initial);
+  }, []);
+  const suggestions = useMemo(() => query.trim() ? artists.filter((artist) => artist.name.normalize("NFKC").toLocaleLowerCase().includes(query.normalize("NFKC").trim().toLocaleLowerCase())).slice(0, 6) : [], [artists, query]);
+
+  return <section className="concert-experience"><div className="concert-search-shell"><label htmlFor="artist-search">{t("concert.search")}</label><div className="concert-search"><input id="artist-search" autoComplete="off" placeholder={t("v3.concertPlaceholder")} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void searchArtist(query); }} /><button type="button" onClick={() => void searchArtist(query)} disabled={loading || !query.trim()}>{loading ? t("concert.searching") : t("concert.searchButton")} <span>↗</span></button></div><div className="artist-suggestions">{suggestions.map((artist) => <button type="button" key={artist.id} onClick={() => void searchArtist(artist.name)}><strong>{artist.name}</strong><span>{t("v3.trackCount", { count: artist.track_count })}</span></button>)}</div></div>
+    {loading && <div className="loading-stage"><span>SEARCHING LIVE SOURCES</span><i /></div>}
+    {error && <p className="empty-state">{t("concert.error")}</p>}
+    {!loading && result?.provider_status === "provider_unavailable" && <p className="empty-state">{t("concert.providerUnavailable")}</p>}
+    {!loading && result && result.provider_status !== "provider_unavailable" && result.events.length === 0 && <p className="empty-state">{t("v3.concertNone")}</p>}
+    <div className="concert-grid">{result?.events.map((event) => <SpotlightCard className="concert-card" tilt key={event.id}>{event.image_url ? <img className="concert-image" src={event.image_url} alt="" /> : <div className="concert-image-placeholder" aria-hidden="true"><span>LIVE</span></div>}<div className="concert-date"><strong>{formatConcertDate(event.date)}</strong><span>{formatConcertTime(event.time ?? null, event.timezone ?? null)}</span></div><p className="recommendation-type">{event.artist}</p><h3>{event.event_name ?? t("concert.title")}</h3><p>{[event.venue, event.city, event.region, event.country].filter(Boolean).join(" · ") || t("concert.venueUnavailable")}</p><small>{concertProviderLabel(event.provider, language)}</small>{shouldShowConcertLink(event) && <a className="details-link" href={event.external_url!} target="_blank" rel="noreferrer">{t("concert.details")}</a>}</SpotlightCard>)}</div>
   </section>;
 }

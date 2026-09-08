@@ -131,7 +131,7 @@ export default function AudioPanel() {
     setCurrentTime(value);
   };
 
-  return <section className="panel audio-panel">
+  return <section className="audio-panel spotlight-surface">
     <div className="audio-heading"><div><p className="eyebrow">{t("audio.eyebrow")}</p><h2>{t("audio.title")}</h2><p className="muted">{t("audio.description")}</p></div></div>
     <div className="audio-upload-row"><label className="upload-button">{t("audio.choose")}<input type="file" accept=".wav,.mp3,.m4a,.aac,.flac,audio/*" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label><span className="muted">{file?.name ?? t("audio.formats")}</span><button type="button" onClick={() => void uploadAndSeparate()} disabled={!file || (job?.status === "PENDING" || job?.status === "PROCESSING")}>{t("audio.separate")}</button></div>
     {job && <p className="audio-status"><strong>{t(`status.${job.status.toLowerCase()}`)}</strong> · {message}</p>}

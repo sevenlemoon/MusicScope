@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, select
 from app.db import SessionLocal
 from app.constants import DEMO_USER_ID
 from app.models import Artist, FeedbackEvent, ImportBatch, ListeningEvent, ProfileSnapshot, RawImportRecord, Track, User
-from app.recommendation import feedback_penalties, generate_recommendations
+from app.recommendation import SKIP_REASONS, feedback_penalties, generate_recommendations
 from app.routes import DEFAULT_USER_ID
 
 
@@ -57,6 +57,10 @@ def test_negative_feedback_and_skip_reasons_have_different_strengths() -> None:
         db.execute(delete(User).where(User.id == user_id))
         db.commit()
         db.close()
+
+
+def test_feedback_reasons_preserve_artist_and_style_dislike_meaning() -> None:
+    assert {"DISLIKE_ARTIST", "DISLIKE_STYLE", "SIMPLY_DISLIKE", "NOT_FOR_TODAY"} <= SKIP_REASONS
 
 
 def test_excluded_tracks_and_profile_get_do_not_leak_or_create_snapshots() -> None:

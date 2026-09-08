@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -142,7 +142,24 @@ def list_library(user_id: UUID = DEFAULT_USER_ID, db: Session = Depends(get_db))
     memberships = db.scalars(select(UserLibraryTrack).where(UserLibraryTrack.user_id == user_id, UserLibraryTrack.active.is_(True)).order_by(UserLibraryTrack.imported_at.desc())).all()
     tracks = {track.id: track for track in db.scalars(select(Track).where(Track.id.in_([item.track_id for item in memberships] or [None])))}
     artists = {artist.id: artist for artist in db.scalars(select(Artist).where(Artist.id.in_([track.primary_artist_id for track in tracks.values()] or [None])))}
-    return [{"id": str(item.id), "track_id": str(item.track_id), "title": tracks[item.track_id].canonical_title, "artist": artists.get(tracks[item.track_id].primary_artist_id).canonical_name if artists.get(tracks[item.track_id].primary_artist_id) else None, "source_type": item.source_type, "source_name": item.source_name, "imported_at": item.imported_at} for item in memberships]
+    albums = {album.id: album for album in db.scalars(select(Album).where(Album.id.in_([track.album_id for track in tracks.values() if track.album_id] or [None])))}
+    unique: dict[UUID, UserLibraryTrack] = {}
+    for item in memberships:
+        unique.setdefault(item.track_id, item)
+    result = []
+    for item in unique.values():
+        track = tracks[item.track_id]
+        artist = artists.get(track.primary_artist_id)
+        metadata = track.metadata_json or {}
+        genres = metadata.get("genres") or ([metadata["genre"]] if metadata.get("genre") else [])
+        result.append({"id": str(item.id), "track_id": str(item.track_id), "title": track.canonical_title, "artist_id": str(artist.id) if artist else None, "artist": artist.canonical_name if artist else None, "album": albums.get(track.album_id).canonical_title if albums.get(track.album_id) else None, "genres": genres, "artwork_url": metadata.get("artwork_url"), "metadata_source": metadata.get("metadata_source"), "source_type": item.source_type, "source_name": item.source_name, "imported_at": item.imported_at})
+    return result
+
+
+@router.get("/library/artists")
+def list_library_artists(user_id: UUID = DEFAULT_USER_ID, db: Session = Depends(get_db)) -> list[dict]:
+    rows = db.execute(select(Artist.id, Artist.canonical_name, func.count(distinct(Track.id))).join(Track, Track.primary_artist_id == Artist.id).join(UserLibraryTrack, UserLibraryTrack.track_id == Track.id).where(UserLibraryTrack.user_id == user_id, UserLibraryTrack.active.is_(True)).group_by(Artist.id, Artist.canonical_name).order_by(func.count(distinct(Track.id)).desc(), Artist.canonical_name)).all()
+    return [{"id": str(artist_id), "name": name, "track_count": count} for artist_id, name, count in rows]
 
 
 @router.get("/artists/{artist_id}/concerts")
@@ -251,7 +268,8 @@ def list_profile_snapshots(user_id: UUID = DEFAULT_USER_ID, db: Session = Depend
 
 
 def serialize_recommendation(item: Recommendation, track: Track, artist: str) -> dict:
-    return {"id": str(item.id), "track_id": str(item.track_id), "title": track.canonical_title, "artist": artist, "score": item.score, "role": item.role, "rank": item.rank, "explanation_evidence": item.explanation_evidence, "score_breakdown": item.score_breakdown}
+    metadata = track.metadata_json or {}
+    return {"id": str(item.id), "track_id": str(item.track_id), "title": track.canonical_title, "artist": artist, "genres": metadata.get("genres") or ([metadata["genre"]] if metadata.get("genre") else []), "artwork_url": metadata.get("artwork_url"), "metadata_source": metadata.get("metadata_source"), "score": item.score, "role": item.role, "rank": item.rank, "explanation_evidence": item.explanation_evidence, "score_breakdown": item.score_breakdown}
 
 
 @router.get("/recommendations")
