@@ -4,6 +4,7 @@ from sqlalchemy import select
 from fastapi.testclient import TestClient
 
 from app.concerts import ConcertEventData, ConcertProviderError, MiletOfficialProvider, TicketmasterConcertProvider, deduplicate_events, lookup_artist_concerts
+from app.constants import DEMO_USER_ID
 from app.db import SessionLocal
 from app.models import Artist
 from app.main import app
@@ -73,7 +74,7 @@ def test_concert_endpoints_return_artist_and_relevant_events() -> None:
         artist_response = client.get(f"/api/v1/artists/{artist.id}/concerts?demo=true")
         assert artist_response.status_code == 200
         assert len(artist_response.json()["events"]) == 2
-        all_response = client.get("/api/v1/concerts?demo=true")
+        all_response = client.get(f"/api/v1/concerts?demo=true&user_id={DEMO_USER_ID}")
         assert all_response.status_code == 200
         assert any(event["artist"] == "Demo Artist 01" for event in all_response.json()["events"])
     finally:

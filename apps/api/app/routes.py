@@ -11,14 +11,15 @@ from sqlalchemy.orm import Session
 from .db import get_db
 from .audio import AudioProcessingError, separation_configuration, separation_fingerprint, storage_path, store_uploaded_audio, submit_separation
 from .concerts import lookup_artist_concerts, relevant_artists
-from .importer import import_rows, normalize_text, parse_csv, parse_playlist_text
-from .models import Album, Artist, AudioAsset, FeedbackEvent, ImportBatch, ListeningEvent, Memory, ProfileSnapshot, RawImportRecord, Recommendation, SeparationJob, StemArtifact, TimelinePeriod, Track, User
+from .constants import PERSONAL_USER_ID
+from .importer import import_library_rows, import_listening_rows, normalize_text, parse_csv, parse_playlist_text
+from .models import Album, Artist, AudioAsset, FeedbackEvent, ImportBatch, ListeningEvent, Memory, ProfileSnapshot, RawImportRecord, Recommendation, SeparationJob, StemArtifact, TimelinePeriod, Track, User, UserLibraryTrack
 from .profile import calculate_profiles, refresh_relationships
 from .recommendation import SKIP_REASONS, generate_recommendations
 from .timeline import generate_timeline
 
 router = APIRouter(prefix="/api/v1", tags=["music"])
-DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_USER_ID = PERSONAL_USER_ID
 
 
 class CorrectionRequest(BaseModel):
@@ -66,7 +67,7 @@ async def create_csv_import(file: UploadFile = File(...), user_id: UUID = Form(D
     rows = parse_csv(content)
     if not rows:
         raise HTTPException(status_code=400, detail="CSV contains no records")
-    batch = import_rows(db, user_id, rows, {"filename": file.filename, "content_type": file.content_type})
+    batch = import_listening_rows(db, user_id, rows, {"filename": file.filename, "content_type": file.content_type, "source_type": "csv_listening_history"})
     return serialize_batch(batch)
 
 
@@ -88,7 +89,7 @@ def create_playlist_text_import(request: PlaylistTextImportRequest, db: Session 
     rows, invalid_lines = parse_playlist_text(request.text)
     if not rows:
         raise HTTPException(status_code=400, detail="No valid `Track - Artist` lines were found")
-    batch = import_rows(db, DEFAULT_USER_ID, rows, {"source_type": "assisted_playlist_text", "invalid_lines": invalid_lines, "line_count": len(request.text.splitlines())})
+    batch = import_library_rows(db, DEFAULT_USER_ID, rows, {"source_type": "assisted_playlist_text", "source_name": "pasted playlist", "invalid_lines": invalid_lines, "line_count": len(request.text.splitlines())})
     unique_artists = len({normalize_text(row["artist"]) for row in rows})
     return {**serialize_batch(batch), "invalid_lines": len(invalid_lines), "unique_artists": unique_artists}
 
@@ -117,6 +118,14 @@ def review_records(db: Session = Depends(get_db)) -> list[dict]:
 @router.get("/tracks")
 def list_tracks(db: Session = Depends(get_db)) -> list[dict]:
     return [{"id": str(track.id), "title": track.canonical_title, "artist_id": str(track.primary_artist_id) if track.primary_artist_id else None, "version_type": track.version_type} for track in db.scalars(select(Track).order_by(Track.canonical_title)).all()]
+
+
+@router.get("/library")
+def list_library(user_id: UUID = DEFAULT_USER_ID, db: Session = Depends(get_db)) -> list[dict]:
+    memberships = db.scalars(select(UserLibraryTrack).where(UserLibraryTrack.user_id == user_id, UserLibraryTrack.active.is_(True)).order_by(UserLibraryTrack.imported_at.desc())).all()
+    tracks = {track.id: track for track in db.scalars(select(Track).where(Track.id.in_([item.track_id for item in memberships] or [None])))}
+    artists = {artist.id: artist for artist in db.scalars(select(Artist).where(Artist.id.in_([track.primary_artist_id for track in tracks.values()] or [None])))}
+    return [{"id": str(item.id), "track_id": str(item.track_id), "title": tracks[item.track_id].canonical_title, "artist": artists.get(tracks[item.track_id].primary_artist_id).canonical_name if artists.get(tracks[item.track_id].primary_artist_id) else None, "source_type": item.source_type, "source_name": item.source_name, "imported_at": item.imported_at} for item in memberships]
 
 
 @router.get("/artists/{artist_id}/concerts")
@@ -175,7 +184,7 @@ def correct_record(record_id: UUID, request: CorrectionRequest, db: Session = De
 @router.get("/relationships")
 def list_relationships(user_id: UUID = DEFAULT_USER_ID, db: Session = Depends(get_db)) -> list[dict]:
     relationships = refresh_relationships(db, user_id)
-    return [{"id": str(item.id), "track_id": str(item.track_id), "first_seen_at": item.first_seen_at, "last_played_at": item.last_played_at, "play_count": item.play_count, "replay_count": item.replay_count, "completed_count": item.completed_count, "skip_count": item.skip_count, "completion_avg": item.completion_avg, "favorite_state": item.favorite_state, "explicit_feedback": item.explicit_feedback, "discovery_source": item.discovery_source, "excluded": item.excluded} for item in relationships]
+    return [{"id": str(item.id), "track_id": str(item.track_id), "first_seen_at": item.first_seen_at, "last_played_at": item.last_played_at, "play_count": item.play_count, "replay_count": item.replay_count, "completed_count": item.completed_count, "skip_count": item.skip_count, "completion_avg": item.completion_avg, "favorite_state": item.favorite_state, "explicit_feedback": item.explicit_feedback, "discovery_source": item.discovery_source, "in_library": item.in_library, "first_library_imported_at": item.first_library_imported_at, "library_source_count": item.library_source_count, "excluded": item.excluded} for item in relationships]
 
 
 @router.get("/profile")

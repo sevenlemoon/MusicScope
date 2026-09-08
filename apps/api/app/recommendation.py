@@ -119,7 +119,7 @@ def generate_recommendations(db: Session, user_id: UUID, exploration_level: floa
     weights = RecommendationWeights.for_exploration(exploration)
     for track, artist in tracks:
         relation = relationship_by_track.get(track.id)
-        if relation and relation.excluded:
+        if relation is None or relation.excluded:
             continue
         genre = str((track.metadata_json or {}).get("genre", "unknown"))
         long_artist = long_artists.get(str(artist.id), 0.0)
@@ -129,7 +129,7 @@ def generate_recommendations(db: Session, user_id: UUID, exploration_level: floa
         long_match = 0.55 * long_artist + 0.45 * long_genre
         short_match = 0.55 * short_artist + 0.45 * short_genre
         plays = relation.play_count if relation else 0
-        novelty = 1.0 if not relation else max(0.15, 1.0 - min(plays / 3, 1.0))
+        novelty = max(0.08, 0.55 - min(plays / 3, 0.45)) if relation.in_library else max(0.15, 1.0 - min(plays / 3, 1.0))
         if str(artist.id) not in recent_artist_ids:
             novelty = min(1.0, novelty + 0.2)
         relationship = 0.0 if not relation else clamp(min(plays / 4, 1.0) * 0.55 + (0.45 if relation.favorite_state else 0.0))

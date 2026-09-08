@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy import delete, func, select
 
 from app.db import SessionLocal
+from app.constants import DEMO_USER_ID
 from app.models import Artist, FeedbackEvent, ImportBatch, ListeningEvent, ProfileSnapshot, RawImportRecord, Track, User
 from app.recommendation import feedback_penalties, generate_recommendations
 from app.routes import DEFAULT_USER_ID
@@ -13,8 +14,8 @@ from app.routes import DEFAULT_USER_ID
 def test_fixed_recommendation_run_is_deterministic_and_diverse() -> None:
     db = SessionLocal()
     try:
-        _, first = generate_recommendations(db, DEFAULT_USER_ID, 50, 12)
-        _, second = generate_recommendations(db, DEFAULT_USER_ID, 50, 12)
+        _, first = generate_recommendations(db, DEMO_USER_ID, 50, 12)
+        _, second = generate_recommendations(db, DEMO_USER_ID, 50, 12)
         assert [(item.track_id, item.role, item.score) for item in first] == [(item.track_id, item.role, item.score) for item in second]
         tracks = {track.id: track for track in db.scalars(select(Track)).all()}
         artists = {artist.id: artist for artist in db.scalars(select(Artist)).all()}
@@ -27,7 +28,7 @@ def test_fixed_recommendation_run_is_deterministic_and_diverse() -> None:
 def test_exploration_changes_roles_and_novelty() -> None:
     db = SessionLocal()
     try:
-        runs = {level: generate_recommendations(db, DEFAULT_USER_ID, level, 12)[1] for level in (10, 50, 90)}
+        runs = {level: generate_recommendations(db, DEMO_USER_ID, level, 12)[1] for level in (10, 50, 90)}
         role_counts = {level: Counter(item.role for item in items) for level, items in runs.items()}
         assert role_counts[10] != role_counts[90]
         low_novelty = sum(item.score_breakdown["novelty"] for item in runs[10]) / 12
@@ -89,7 +90,7 @@ def test_excluded_tracks_and_profile_get_do_not_leak_or_create_snapshots() -> No
 def test_explanations_reference_stored_scoring_evidence() -> None:
     db = SessionLocal()
     try:
-        _, recommendations = generate_recommendations(db, DEFAULT_USER_ID, 90, 12)
+        _, recommendations = generate_recommendations(db, DEMO_USER_ID, 90, 12)
         assert recommendations
         for item in recommendations:
             assert item.explanation_evidence
@@ -97,4 +98,3 @@ def test_explanations_reference_stored_scoring_evidence() -> None:
             assert item.score_breakdown["exploration"] == 0.9
     finally:
         db.close()
-

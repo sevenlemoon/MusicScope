@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
+from app.constants import DEMO_USER_ID
 from app.models import Artist, ImportBatch, ListeningEvent, ProfileSnapshot, RawImportRecord, Track, User
 from app.profile import calculate_profiles, refresh_relationships
 from app.routes import DEFAULT_USER_ID
@@ -16,7 +17,7 @@ client = TestClient(app)
 def test_relationships_aggregate_replays_favorites_and_completion() -> None:
     db = SessionLocal()
     try:
-        relationships = refresh_relationships(db, DEFAULT_USER_ID)
+        relationships = refresh_relationships(db, DEMO_USER_ID)
         relationship = next(item for item in relationships if item.play_count > 1)
         assert relationship.replay_count > 0
         assert relationship.favorite_state is True
@@ -29,7 +30,7 @@ def test_relationships_aggregate_replays_favorites_and_completion() -> None:
 def test_profiles_have_distinct_long_and_recent_windows() -> None:
     db = SessionLocal()
     try:
-        profiles = calculate_profiles(db, DEFAULT_USER_ID, datetime(2025, 3, 3, tzinfo=timezone.utc))
+        profiles = calculate_profiles(db, DEMO_USER_ID, datetime(2025, 3, 3, tzinfo=timezone.utc))
         long_term = profiles["long_term"].features
         short_term = profiles["short_term"].features
         assert long_term["summary"]["unique_tracks"] > short_term["summary"]["unique_tracks"]

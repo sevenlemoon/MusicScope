@@ -128,6 +128,21 @@ class ListeningEvent(Base):
     context: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+class UserLibraryTrack(Base):
+    __tablename__ = "user_library_tracks"
+    __table_args__ = (UniqueConstraint("user_id", "track_id", "source_type", "source_name", name="uq_user_library_track_source"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    track_id: Mapped[UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"), index=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    source_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    saved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+
 class UserTrackRelationship(Base):
     __tablename__ = "user_track_relationships"
     __table_args__ = (UniqueConstraint("user_id", "track_id"),)
@@ -146,6 +161,9 @@ class UserTrackRelationship(Base):
     favorite_state: Mapped[bool] = mapped_column(Boolean, default=False)
     explicit_feedback: Mapped[str | None] = mapped_column(String(32))
     discovery_source: Mapped[str | None] = mapped_column(String(100))
+    in_library: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_library_imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    library_source_count: Mapped[int] = mapped_column(Integer, default=0)
     excluded: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 

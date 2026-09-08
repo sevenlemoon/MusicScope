@@ -1,17 +1,16 @@
 """Create a deterministic catalog and listening import for local demos."""
 
 from datetime import datetime, timezone
-from uuid import UUID
-
 from sqlalchemy import select
 
 from app.db import SessionLocal
+from app.constants import DEMO_USER_ID
 from app.importer import import_rows, normalize_text
-from app.models import Album, Artist, Track, TrackArtist, User, UserSettings
+from app.models import Album, Artist, Track, TrackArtist, User, UserSettings, UserTrackRelationship
 from app.timeline import generate_timeline
 from app.models import Memory
 
-DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_USER_ID = DEMO_USER_ID
 GENRES = ["indie rock", "electronic", "soul", "jazz", "hip-hop", "folk", "ambient", "pop"]
 
 
@@ -24,7 +23,7 @@ def main() -> None:
             db.add(user)
             db.add(UserSettings(user_id=DEFAULT_USER_ID))
             db.flush()
-        if db.scalar(select(Track.id).limit(1)):
+        if db.scalar(select(UserTrackRelationship.id).where(UserTrackRelationship.user_id == DEFAULT_USER_ID).limit(1)):
             periods = generate_timeline(db, DEFAULT_USER_ID)
             if periods and not db.scalar(select(Memory.id).where(Memory.user_id == DEFAULT_USER_ID)):
                 db.add(Memory(user_id=DEFAULT_USER_ID, target_type="timeline_period", target_id=periods[0].id, text="A demo memory attached to this listening period."))

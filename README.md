@@ -2,6 +2,11 @@
 
 MusicScope is a local, single-user music intelligence graduation project. It will combine listening imports, explainable recommendations, taste timelines, personal memories, lightweight concert discovery, and cached two-stem audio separation.
 
+The personal user is `00000000-0000-0000-0000-000000000001`. Deterministic
+demo data belongs to the separate demo user
+`00000000-0000-0000-0000-000000000999` and is never mixed into normal personal
+API results.
+
 The foundation uses a Next.js/TypeScript web client, a FastAPI/Python API, PostgreSQL, and Alembic migrations. External music providers are optional adapters; CSV/manual import and deterministic demo data remain independent of them.
 
 ## Local setup
@@ -66,11 +71,22 @@ FFmpeg, and the isolated runtime are ready:
 PYTHONPATH=apps/api .venv/bin/python scripts/audio_smoke.py
 ```
 
-## CSV import
+## CSV and library import
 
-The baseline importer accepts CSV files with `artist` and `title` columns. Optional columns include `album`, `played_at`, `duration_played_ms`, `completion_ratio`, `event_type`, `favorite`, `source_record_id`, and `source`. Records that do not resolve remain reviewable and do not block the batch.
+The baseline CSV importer accepts `artist` and `title` columns. Rows with
+behavioral fields such as `played_at` are listening-history imports and may
+create `ListeningEvent` rows only when a canonical track resolves. Optional
+columns include `album`, `duration_played_ms`, `completion_ratio`,
+`event_type`, `favorite`, `source_record_id`, and `source`.
 
-To load the deterministic demo catalog and listening history:
+Playlist-text imports are library imports: they create or reuse canonical
+artists/tracks, add `UserLibraryTrack` membership, preserve raw provenance,
+and create zero listening events. Library membership is long-term preference
+evidence, not proof that a track was played. Short-term state and Timeline use
+timestamped listening events only.
+
+To load the deterministic demo catalog and listening history for the separate
+demo user:
 
 ```bash
 PYTHONPATH=apps/api .venv/bin/python scripts/seed_demo.py
@@ -88,16 +104,29 @@ The evidence-first Timeline is generated deliberately with `POST /api/v1/timelin
 
 ## Concert discovery
 
-Concert discovery is deliberately lightweight and user-scoped. By default it
-uses deterministic fictional fixtures for the demo, so it works without
-internet access or credentials. To enable optional live Ticketmaster Discovery
-lookups, set `CONCERT_PROVIDER=ticketmaster` and provide
-`TICKETMASTER_API_KEY` in `.env`. Results are cached for six hours and fall
-back to stale cached data or demo fixtures when the provider is unavailable.
+Concert discovery is deliberately lightweight and user-scoped. Demo fixtures
+are available only through explicit demo mode. Normal personal results use
+effective personal relationships and never silently fall back to fictional
+events. To enable optional live Ticketmaster Discovery lookups, set
+`CONCERT_PROVIDER=ticketmaster` and provide `TICKETMASTER_API_KEY` in `.env`.
 
 The API endpoints are `GET /api/v1/concerts` for relevant artists and
 `GET /api/v1/artists/{artist_id}/concerts` for one artist. MusicScope only
 links to external event details; it does not sell tickets or process checkout.
+
+## Data-integrity remediation
+
+If an older local database was seeded before personal/demo separation, inspect
+the targeted cleanup with:
+
+```bash
+PYTHONPATH=apps/api .venv/bin/python scripts/reset_personal_demo_contamination.py
+```
+
+Run it with `--apply` only after reviewing the dry-run counts. It targets the
+known deterministic demo artist names, demo metadata, and deterministic-demo
+import batch under the personal user; it does not wipe the database or
+legitimate non-demo personal records.
 
 To run the full containerized foundation instead:
 

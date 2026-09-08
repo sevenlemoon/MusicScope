@@ -5,9 +5,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from app.db import SessionLocal
+from app.constants import DEMO_USER_ID
 from app.main import app
 from app.models import ImportBatch, ListeningEvent, RawImportRecord, Track, User
-from app.routes import DEFAULT_USER_ID
 from app.timeline import generate_timeline
 
 client = TestClient(app)
@@ -16,9 +16,9 @@ client = TestClient(app)
 def test_demo_timeline_is_deterministic_and_has_meaningful_periods() -> None:
     db = SessionLocal()
     try:
-        first = generate_timeline(db, DEFAULT_USER_ID)
+        first = generate_timeline(db, DEMO_USER_ID)
         first_shape = [(period.start_at, period.change_score, period.evidence) for period in first]
-        second = generate_timeline(db, DEFAULT_USER_ID)
+        second = generate_timeline(db, DEMO_USER_ID)
         second_shape = [(period.start_at, period.change_score, period.evidence) for period in second]
         assert first_shape == second_shape
         assert len(first) >= 3
@@ -34,10 +34,10 @@ def test_demo_timeline_is_deterministic_and_has_meaningful_periods() -> None:
 def test_threshold_suppresses_small_changes() -> None:
     db = SessionLocal()
     try:
-        periods = generate_timeline(db, DEFAULT_USER_ID, threshold=0.99)
+        periods = generate_timeline(db, DEMO_USER_ID, threshold=0.99)
         assert periods == []
     finally:
-        generate_timeline(db, DEFAULT_USER_ID)
+        generate_timeline(db, DEMO_USER_ID)
         db.close()
 
 

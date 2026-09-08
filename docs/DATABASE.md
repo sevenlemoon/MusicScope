@@ -29,8 +29,11 @@ id, batch_id, raw_payload, source_record_id, observed_at, resolution_status, res
 ## listening_events
 id, user_id, track_id, raw_record_id, played_at, duration_played_ms, completion_ratio, context
 
+## user_library_tracks
+id, user_id, track_id, source_type, source_name, source_metadata, saved_at, imported_at, active
+
 ## user_track_relationships
-user_id, track_id, first_seen_at, last_played_at, play_count, completion_stats, favorite_state, effective_feedback, discovery_source, excluded
+user_id, track_id, library state, first/last played, play/replay counts, completion stats, favorite_state, effective_feedback, discovery_source, excluded
 
 ## feedback_events
 id, user_id, track_id, event_type, reason, context, created_at
