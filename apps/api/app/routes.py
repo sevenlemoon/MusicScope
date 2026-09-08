@@ -90,7 +90,7 @@ def create_playlist_text_import(request: PlaylistTextImportRequest, db: Session 
     if not rows:
         raise HTTPException(status_code=400, detail="No valid `Track - Artist` lines were found")
     batch = import_library_rows(db, DEFAULT_USER_ID, rows, {"source_type": "assisted_playlist_text", "source_name": "pasted playlist", "invalid_lines": invalid_lines, "line_count": len(request.text.splitlines())})
-    unique_artists = len({normalize_text(row["artist"]) for row in rows})
+    unique_artists = len({normalize_text(artist) for row in rows for artist in row.get("artists", [row["artist"]])})
     return {**serialize_batch(batch), "invalid_lines": len(invalid_lines), "unique_artists": unique_artists}
 
 

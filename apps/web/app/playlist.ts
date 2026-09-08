@@ -29,11 +29,12 @@ export function parsePlaylistText(value: string): { rows: { title: string; artis
   for (const line of value.split(/\r?\n/)) {
     const original = line.trim();
     if (!original) continue;
-    const match = original.match(/\s[-–—]\s/);
+    const matches = [...original.matchAll(/\s[-–—]\s/g)];
+    const match = matches.at(-1);
     if (!match || match.index === undefined) { invalid.push(original); continue; }
     const title = original.slice(0, match.index).trim(); const artist = original.slice(match.index + match[0].length).trim();
     if (!title || !artist) { invalid.push(original); continue; }
-    rows.push({ title, artist, artists: artist.split(/\s*(?:\/|＆|&|、|，|,)\s*/).filter(Boolean) });
+    rows.push({ title, artist, artists: artist.split(/\s*(?:\/|／)\s*/).filter(Boolean) });
   }
-  return { rows, invalid, summary: { totalLines: value.split(/\r?\n/).filter((line) => line.trim()).length, validTracks: rows.length, invalidLines: invalid.length, uniqueArtists: new Set(rows.map((row) => row.artist.toLowerCase())).size } };
+  return { rows, invalid, summary: { totalLines: value.split(/\r?\n/).filter((line) => line.trim()).length, validTracks: rows.length, invalidLines: invalid.length, uniqueArtists: new Set(rows.flatMap((row) => row.artists.map((artist) => artist.toLowerCase()))).size } };
 }

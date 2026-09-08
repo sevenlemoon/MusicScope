@@ -94,13 +94,32 @@ PYTHONPATH=apps/api .venv/bin/python scripts/seed_demo.py
 
 NetEase Cloud Music playlist URLs are detected in the web UI, but the public page currently does not expose the complete track list through a stable supported endpoint. MusicScope reports that limitation and keeps CSV import as the reliable path; see `docs/NETEASE_IMPORT.md`.
 
+For the graduation demonstration, the supported real-data path is to open the
+NetEase playlist in the documented third-party helper, copy its plain
+`Track - Artist` lines, and paste them into the assisted import. This path is
+designed for lists of roughly 2,500 tracks, preserves Unicode and version
+names, keeps clearly delimited featured artists as separate relationships, and
+does not create listening events or timestamps. Repeating the same import is
+safe for library membership; raw import batches remain as provenance.
+
+MusicScope has two intentionally separate modes. The PERSONAL user contains
+only imported personal library/history, does not invent a Timeline without
+timestamps, and does not substitute fictional concerts. The DEMO user contains
+deterministic catalog/history for demonstrating Timeline and recommendation
+behavior. They are never merged.
+
 ## Profile calculation
 
-The profile API keeps long-term and short-term state separate. Long-term state uses all effective historical events. Short-term state uses a configurable 30-day window with a 14-day exponential recency half-life. When `as_of` is omitted, the latest effective event is used as the reference time, which keeps the deterministic demo reproducible.
+The profile API keeps long-term and short-term state separate. Long-term state uses all effective historical events plus library membership. Short-term state uses a configurable 30-day window with a 14-day exponential recency half-life and remains empty when only playlist membership is available. When `as_of` is omitted, the latest effective event is used as the reference time, which keeps the deterministic demo reproducible.
 
 `GET /api/v1/profile` calculates a read-only view and does not persist a snapshot. Deliberate snapshot persistence uses `POST /api/v1/profile/snapshots`. Recommendations are generated through `GET /api/v1/recommendations?exploration_level=50`, with feedback posted to `/api/v1/recommendations/{id}/feedback`.
 
 The evidence-first Timeline is generated deliberately with `POST /api/v1/timeline/recalculate`. It compares yearly genre/artist shares, new-artist rate, completion, skips, and listening frequency using a configurable change threshold. `GET /api/v1/timeline` is read-only. Music Memories are user-authored and managed independently through `/api/v1/memories`.
+
+Recommendations are currently personalized library rediscovery and ranking,
+not unrestricted internet-wide music discovery. Exploration changes ranking,
+novelty, roles, and diversity among the user's available catalog; missing
+genre metadata is left missing rather than fabricated.
 
 ## Concert discovery
 

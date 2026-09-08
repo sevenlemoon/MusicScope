@@ -62,8 +62,8 @@ def feedback_penalties(db: Session, user_id: UUID) -> dict[UUID, float]:
     return penalties
 
 
-def role_for(*, long_match: float, genre_match: float, novelty: float, exploration: float) -> str:
-    if long_match >= 0.62 and novelty <= 0.55:
+def role_for(*, long_match: float, artist_match: float, genre_match: float, novelty: float, exploration: float) -> str:
+    if (long_match >= 0.62 or (genre_match == 0 and artist_match >= 0.8)) and novelty <= 0.55:
         return "PRECISE_MATCH"
     if genre_match >= 0.42 and novelty <= 0.82:
         return "ADJACENT_EXPLORATION"
@@ -89,8 +89,10 @@ def role_quota(exploration: float, limit: int) -> dict[str, int]:
 def make_evidence(candidate: Candidate, exploration: float) -> list[dict[str, Any]]:
     b = candidate.breakdown
     evidence: list[dict[str, Any]] = []
-    if b["long_match"] >= 0.5:
+    if b["genre_match"] >= 0.5 and candidate.genre:
         evidence.append({"signal": "long_term_genre", "value": round(b["long_match"], 3), "text": f"matches a strong long-term {candidate.genre} preference"})
+    elif b["artist_match"] >= 0.5:
+        evidence.append({"signal": "artist_affinity", "value": round(b["artist_match"], 3), "text": "matches an artist in your music library"})
     if b["short_match"] >= 0.45:
         evidence.append({"signal": "short_term_state", "value": round(b["short_match"], 3), "text": "matches your recent listening state"})
     if b["relationship"] >= 0.5:
@@ -121,7 +123,7 @@ def generate_recommendations(db: Session, user_id: UUID, exploration_level: floa
         relation = relationship_by_track.get(track.id)
         if relation is None or relation.excluded:
             continue
-        genre = str((track.metadata_json or {}).get("genre", "unknown"))
+        genre = str((track.metadata_json or {}).get("genre") or "")
         long_artist = long_artists.get(str(artist.id), 0.0)
         short_artist = short_artists.get(str(artist.id), 0.0)
         long_genre = long_genres.get(genre, 0.0)
@@ -129,15 +131,15 @@ def generate_recommendations(db: Session, user_id: UUID, exploration_level: floa
         long_match = 0.55 * long_artist + 0.45 * long_genre
         short_match = 0.55 * short_artist + 0.45 * short_genre
         plays = relation.play_count if relation else 0
-        novelty = max(0.08, 0.55 - min(plays / 3, 0.45)) if relation.in_library else max(0.15, 1.0 - min(plays / 3, 1.0))
-        if str(artist.id) not in recent_artist_ids:
+        novelty = max(0.08, 0.25 - min(plays / 3, 0.17)) if relation.in_library else max(0.15, 1.0 - min(plays / 3, 1.0))
+        if not relation.in_library and str(artist.id) not in recent_artist_ids:
             novelty = min(1.0, novelty + 0.2)
         relationship = 0.0 if not relation else clamp(min(plays / 4, 1.0) * 0.55 + (0.45 if relation.favorite_state else 0.0))
         repetition = 1.0 if relation and relation.last_played_at and relation.last_played_at >= latest_cutoff else 0.0
         negative_penalty = penalties.get(track.id, 0.0)
         score = weights.long_term * long_match + weights.short_term * short_match + weights.relationship * relationship + weights.novelty * novelty - 0.12 * repetition - negative_penalty
-        breakdown = {"long_match": round(long_match, 4), "short_match": round(short_match, 4), "relationship": round(relationship, 4), "novelty": round(novelty, 4), "repetition_penalty": round(0.12 * repetition, 4), "negative_penalty": round(negative_penalty, 4), "exploration": round(exploration, 4)}
-        candidate = Candidate(track, artist, genre, round(score, 6), role_for(long_match=long_match, genre_match=long_genre, novelty=novelty, exploration=exploration), breakdown, [])
+        breakdown = {"long_match": round(long_match, 4), "short_match": round(short_match, 4), "artist_match": round(long_artist, 4), "genre_match": round(long_genre, 4), "relationship": round(relationship, 4), "novelty": round(novelty, 4), "repetition_penalty": round(0.12 * repetition, 4), "negative_penalty": round(negative_penalty, 4), "exploration": round(exploration, 4)}
+        candidate = Candidate(track, artist, genre, round(score, 6), role_for(long_match=long_match, artist_match=long_artist, genre_match=long_genre, novelty=novelty, exploration=exploration), breakdown, [])
         candidate.evidence = make_evidence(candidate, exploration)
         candidates.append(candidate)
     candidates.sort(key=lambda item: (-item.score, str(item.track.id)))
@@ -160,9 +162,12 @@ def select_diverse(candidates: list[Candidate], quota: dict[str, int], limit: in
     used: set[UUID] = set()
     artist_counts: dict[UUID, int] = {}
     genre_counts: dict[str, int] = {}
+    def diversity_genre(candidate: Candidate) -> str:
+        return candidate.genre or f"unknown:{candidate.track.id}"
+
     for role in ROLE_NAMES:
         while quota[role] and pools[role]:
-            candidate = max(pools[role], key=lambda item: item.score - 0.08 * artist_counts.get(item.artist.id, 0) - 0.04 * genre_counts.get(item.genre, 0))
+            candidate = max(pools[role], key=lambda item: item.score - 0.08 * artist_counts.get(item.artist.id, 0) - 0.04 * genre_counts.get(diversity_genre(item), 0))
             pools[role].remove(candidate)
             quota[role] -= 1
             if candidate.track.id in used:
@@ -170,15 +175,17 @@ def select_diverse(candidates: list[Candidate], quota: dict[str, int], limit: in
             selected.append(candidate)
             used.add(candidate.track.id)
             artist_counts[candidate.artist.id] = artist_counts.get(candidate.artist.id, 0) + 1
-            genre_counts[candidate.genre] = genre_counts.get(candidate.genre, 0) + 1
+            genre = diversity_genre(candidate)
+            genre_counts[genre] = genre_counts.get(genre, 0) + 1
     remaining = [candidate for candidate in candidates if candidate.track.id not in used]
     for candidate in sorted(remaining, key=lambda item: (-item.score, str(item.track.id))):
         if len(selected) >= limit:
             break
-        if artist_counts.get(candidate.artist.id, 0) >= 3 or genre_counts.get(candidate.genre, 0) >= 5:
+        if artist_counts.get(candidate.artist.id, 0) >= 3 or genre_counts.get(diversity_genre(candidate), 0) >= 5:
             continue
         selected.append(candidate)
         used.add(candidate.track.id)
         artist_counts[candidate.artist.id] = artist_counts.get(candidate.artist.id, 0) + 1
-        genre_counts[candidate.genre] = genre_counts.get(candidate.genre, 0) + 1
+        genre = diversity_genre(candidate)
+        genre_counts[genre] = genre_counts.get(genre, 0) + 1
     return selected[:limit]

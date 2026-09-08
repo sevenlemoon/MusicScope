@@ -65,7 +65,8 @@ def parse_playlist_text(content: str) -> tuple[list[dict[str, Any]], list[str]]:
         original = line.strip()
         if not original:
             continue
-        match = PLAYLIST_SEPARATOR_RE.search(original)
+        separators = list(PLAYLIST_SEPARATOR_RE.finditer(original))
+        match = separators[-1] if separators else None
         if not match:
             invalid.append(original)
             continue
@@ -73,7 +74,7 @@ def parse_playlist_text(content: str) -> tuple[list[dict[str, Any]], list[str]]:
         if not title or not artist:
             invalid.append(original)
             continue
-        artists = [part.strip() for part in re.split(r"\s*(?:/|＆|&|、|，|,)\s*", artist) if part.strip()]
+        artists = [part.strip() for part in re.split(r"\s*(?:/|／)\s*", artist) if part.strip()]
         rows.append({"title": title, "artist": artist, "artists": artists, "source": "assisted_playlist_text"})
     return rows, invalid
 

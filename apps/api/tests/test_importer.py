@@ -33,3 +33,28 @@ def test_playlist_text_parser_skips_blank_lines_and_preserves_playlist_only_sema
     assert rows[0]["artists"] == ["Artist", "Guest"]
     assert "played_at" not in rows[0]
     assert invalid == ["not a track line"]
+
+
+def test_playlist_text_parser_handles_real_samples_unicode_and_2500_rows() -> None:
+    samples = [
+        "Can We Kiss Forever? - Kina",
+        "Monody (Radio Edit) - TheFatRat / Laura Brehm",
+        "Need You Right Now - HEDEGAARD / Hayley Warner",
+        "Superficial Love - Karim Mika / Gabs",
+        "Neon Rainbow - Rameses B / Anna Yvette",
+        "Tattoo - GJan",
+        "Immediate Approach - 川越康弘 / 南亜矢子",
+        "Savage Love (Laxed – Siren Beat) (BTS Remix) - Jawsh 685 / Jason Derulo / BTS",
+        'Hopes and Dreams (From "Undertale") - Tenkitsune',
+    ]
+    content = "\n".join(samples + [f"Synthetic Track {index} - Artist {index % 50}" for index in range(2491)])
+    rows, invalid = parse_playlist_text(content)
+    assert len(rows) == 2500
+    assert invalid == []
+    assert rows[1]["artists"] == ["TheFatRat", "Laura Brehm"]
+    assert rows[7]["title"] == "Savage Love (Laxed – Siren Beat) (BTS Remix)"
+    assert rows[8]["artist"] == "Tenkitsune"
+    assert rows[8]["title"] == 'Hopes and Dreams (From "Undertale")'
+    assert rows[6]["artists"] == ["川越康弘", "南亜矢子"]
+    ambiguous_rows, _ = parse_playlist_text("Song - Earth, Wind & Fire")
+    assert ambiguous_rows[0]["artists"] == ["Earth, Wind & Fire"]
