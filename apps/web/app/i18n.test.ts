@@ -10,7 +10,7 @@ describe("MusicScope language support", () => {
 
   it("switches to English and back without changing data labels", () => {
     expect(translate("en", "nav.timeline")).toBe("Timeline");
-    expect(translate("zh", "nav.timeline")).toBe("音乐时间线");
+    expect(translate("zh", "nav.timeline")).toBe("时间线");
     expect(translate("en", "import.summary", { total: 8, withRecords: 3, empty: 5 })).toContain("8 imports");
   });
 });
