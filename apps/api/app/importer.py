@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .models import Album, Artist, ImportBatch, ListeningEvent, RawImportRecord, Track, TrackArtist, UserLibraryTrack
 
 RESOLUTION_STATES = {"resolved", "ambiguous", "unresolved", "manually_corrected"}
+MAX_CANONICAL_TEXT = 300
 VERSION_RE = re.compile(r"\s*[\[(](live|remix|remastered|acoustic|cover|edit|version)[^\])]*[\])]", re.I)
 PLAYLIST_SEPARATOR_RE = re.compile(r"\s+[-–—]\s+")
 
@@ -102,7 +103,13 @@ def resolve_track(db: Session, artist_name: str, title: str, album_name: str | N
 
 
 def ensure_catalog_track(db: Session, artist_names: list[str], title: str, album_name: str | None, source_type: str) -> Track:
-    artists = [ensure_artist(db, name) for name in artist_names if name.strip()]
+    artists = []
+    seen_artists: set[str] = set()
+    for name in artist_names:
+        key = normalize_text(name)
+        if name.strip() and key not in seen_artists:
+            artists.append(ensure_artist(db, name))
+            seen_artists.add(key)
     if not artists:
         raise ValueError("artist is required")
     title_key = normalize_text(title)
@@ -139,6 +146,7 @@ def _finish_batch(db: Session, batch: ImportBatch) -> ImportBatch:
     batch.resolved_records = sum(record.resolution_status in {"resolved", "manually_corrected"} for record in records)
     batch.ambiguous_records = sum(record.resolution_status == "ambiguous" for record in records)
     batch.unresolved_records = sum(record.resolution_status == "unresolved" for record in records)
+    batch.excluded_records = sum(record.excluded for record in records)
     batch.status = "completed"
     db.commit()
     db.refresh(batch)
@@ -155,8 +163,9 @@ def import_library_rows(db: Session, user_id, rows: list[dict[str, Any]], source
         title = row.get("title") or row.get("track") or row.get("track_title") or ""
         album_name = row.get("album") or row.get("album_title") or ""
         artists = row.get("artists") or [artist_name]
-        track = ensure_catalog_track(db, artists, title, album_name, source_type) if title and artist_name else None
-        state, confidence, note = ("resolved", 1.0, "canonical track created or matched from library import") if track else ("unresolved", None, "artist and title are required")
+        invalid = not title or not artist_name or len(str(title)) > MAX_CANONICAL_TEXT or any(len(str(name)) > MAX_CANONICAL_TEXT for name in artists)
+        track = ensure_catalog_track(db, artists, title, album_name, source_type) if not invalid else None
+        state, confidence, note = ("resolved", 1.0, "canonical track created or matched from library import") if track else ("unresolved", None, "invalid or missing artist/title; preserved for review")
         raw = RawImportRecord(batch_id=batch.id, raw_payload=dict(row), source_record_id=row.get("source_record_id") or row.get("id"), observed_at=None, resolution_status=state, resolution_confidence=confidence, resolution_note=note, resolved_track_id=track.id if track else None)
         db.add(raw)
         db.flush()
@@ -177,13 +186,32 @@ def import_listening_rows(db: Session, user_id, rows: list[dict[str, Any]], sour
         artist_name = row.get("artist") or row.get("artist_name") or ""
         title = row.get("title") or row.get("track") or row.get("track_title") or ""
         album_name = row.get("album") or row.get("album_title") or ""
-        track, state, confidence, note = resolve_track(db, artist_name, title, album_name) if artist_name and title else (None, "unresolved", None, "artist and title are required")
-        raw = RawImportRecord(batch_id=batch.id, raw_payload=dict(row), source_record_id=row.get("source_record_id") or row.get("id"), observed_at=parse_datetime(row.get("played_at") or row.get("timestamp")), resolution_status=state, resolution_confidence=confidence, resolution_note=note, resolved_track_id=track.id if track else None)
+        timestamp_value = row.get("played_at") or row.get("timestamp")
+        observed_at = parse_datetime(timestamp_value)
+        invalid = not title or not artist_name or len(str(title)) > MAX_CANONICAL_TEXT or len(str(artist_name)) > MAX_CANONICAL_TEXT or (timestamp_value not in (None, "") and observed_at is None)
+        track, state, confidence, note = resolve_track(db, artist_name, title, album_name) if not invalid else (None, "unresolved", None, "invalid or malformed row; preserved for review")
+        raw = RawImportRecord(batch_id=batch.id, raw_payload=dict(row), source_record_id=row.get("source_record_id") or row.get("id"), observed_at=observed_at, resolution_status=state, resolution_confidence=confidence, resolution_note=note, resolved_track_id=track.id if track else None)
         db.add(raw)
         db.flush()
         if track:
-            duration = int(row["duration_played_ms"]) if str(row.get("duration_played_ms", "")).isdigit() else None
-            db.add(ListeningEvent(user_id=user_id, track_id=track.id, raw_record_id=raw.id, played_at=raw.observed_at, duration_played_ms=duration, completion_ratio=float(row["completion_ratio"]) if row.get("completion_ratio") else None, event_type=(row.get("event_type") or "play").casefold(), is_favorite=parse_bool(row.get("favorite") or row.get("is_favorite")), context={"source": row.get("source") or "csv", "version_type": detect_version(title)}))
+            duration = None
+            ratio = None
+            try:
+                if row.get("duration_played_ms") not in (None, ""):
+                    duration = int(str(row["duration_played_ms"]))
+                    if duration < 0:
+                        raise ValueError
+                if row.get("completion_ratio") not in (None, ""):
+                    ratio = float(str(row["completion_ratio"]))
+                    if not 0 <= ratio <= 1:
+                        raise ValueError
+            except (TypeError, ValueError):
+                raw.resolution_status = "unresolved"
+                raw.resolution_confidence = None
+                raw.resolution_note = "malformed duration_played_ms or completion_ratio; preserved for review"
+                track = None
+            if track:
+                db.add(ListeningEvent(user_id=user_id, track_id=track.id, raw_record_id=raw.id, played_at=raw.observed_at, duration_played_ms=duration, completion_ratio=ratio, event_type=(row.get("event_type") or "play").casefold(), is_favorite=parse_bool(row.get("favorite") or row.get("is_favorite")), context={"source": row.get("source") or "csv", "version_type": detect_version(title)}))
     db.flush()
     return _finish_batch(db, batch)
 

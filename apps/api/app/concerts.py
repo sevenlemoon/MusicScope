@@ -94,8 +94,7 @@ class TicketmasterConcertProvider:
                 attraction_response = client.get(f"{self.base_url}/attractions.json", params={"apikey": self.api_key, "keyword": artist.canonical_name, "classificationName": "music", "size": 10})
                 attraction_response.raise_for_status()
                 attractions = attraction_response.json().get("_embedded", {}).get("attractions", [])
-                normalized_artist = normalize_text(artist.canonical_name)
-                match = next((item for item in attractions if normalize_text(item.get("name")) == normalized_artist), attractions[0] if attractions else None)
+                match = select_exact_attraction(attractions, artist.canonical_name)
                 if not match:
                     return []
                 provider_artist_id = match.get("id")
@@ -104,7 +103,6 @@ class TicketmasterConcertProvider:
                 return [self._event_from_payload(event, provider_artist_id) for event in event_response.json().get("_embedded", {}).get("events", [])]
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             raise ConcertProviderError(f"Ticketmaster lookup failed: {exc}") from exc
-
     @staticmethod
     def _event_from_payload(event: dict, provider_artist_id: str | None) -> ConcertEventData:
         dates = event.get("dates", {})
@@ -115,6 +113,11 @@ class TicketmasterConcertProvider:
         location = venue.get("location") or {}
         images = sorted(event.get("images") or [], key=lambda image: image.get("width", 0) * image.get("height", 0), reverse=True)
         return ConcertEventData(str(event["id"]), event.get("name"), local_date, local_time, dates.get("timezone"), venue.get("name"), venue.get("city", {}).get("name"), venue.get("state", {}).get("stateCode") or venue.get("state", {}).get("name"), venue.get("country", {}).get("countryCode"), float(location["latitude"]) if location.get("latitude") else None, float(location["longitude"]) if location.get("longitude") else None, event.get("url"), provider_artist_id, images[0].get("url") if images else None)
+
+
+def select_exact_attraction(attractions: list[dict], artist_name: str) -> dict | None:
+    normalized_artist = normalize_text(artist_name)
+    return next((item for item in attractions if normalize_text(item.get("name")) == normalized_artist), None)
 
 
 class MiletOfficialProvider:

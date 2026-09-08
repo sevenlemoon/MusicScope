@@ -3,7 +3,7 @@ import { AudioContextPort, SynchronizedStemPlayer } from "./audio-player";
 
 function fakeContext() {
   let now = 0;
-  const sources: { startAt: number; offset: number; stopped: boolean }[] = [];
+  const sources: { startAt: number; offset: number; stopped: boolean; ended?: (() => void) | null }[] = [];
   const context = {
     get currentTime() { return now; },
     destination: {} as AudioNode,
@@ -16,6 +16,7 @@ function fakeContext() {
         connect: () => undefined,
         start: (at: number, offset: number) => { source.startAt = at; source.offset = offset; },
         stop: () => { source.stopped = true; },
+        set onended(handler: (() => void) | null) { source.ended = handler; },
       } as unknown as AudioBufferSourceNode;
     },
     resume: async () => undefined,
@@ -60,5 +61,29 @@ describe("SynchronizedStemPlayer", () => {
     player.setGain("vocals", 0.25);
     expect(player.currentTime).toBe(12);
     expect(context.sources).toHaveLength(2);
+  });
+
+  it("stops old sources when buffers are replaced", async () => {
+    const context = fakeContext();
+    const player = new SynchronizedStemPlayer(context as unknown as AudioContextPort);
+    player.setBuffers(buffers());
+    await player.play();
+    const first = context.sources.slice();
+    player.setBuffers(buffers());
+    expect(player.isPlaying).toBe(false);
+    expect(first.every((source) => source.stopped)).toBe(true);
+  });
+
+  it("resets after both stems end and can replay", async () => {
+    const context = fakeContext();
+    const player = new SynchronizedStemPlayer(context as unknown as AudioContextPort);
+    player.setBuffers(buffers());
+    await player.play();
+    context.sources[0].ended?.();
+    expect(player.isPlaying).toBe(true);
+    context.sources[1].ended?.();
+    expect(player.isPlaying).toBe(false);
+    await player.play();
+    expect(player.isPlaying).toBe(true);
   });
 });

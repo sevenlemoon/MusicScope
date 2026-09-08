@@ -90,6 +90,9 @@ demo user:
 
 ```bash
 PYTHONPATH=apps/api .venv/bin/python scripts/seed_demo.py
+
+# Create the empty personal user for a clean database (safe to rerun)
+PYTHONPATH=apps/api .venv/bin/python scripts/bootstrap_personal.py
 ```
 
 NetEase Cloud Music playlist URLs are detected in the web UI, but the public page currently does not expose the complete track list through a stable supported endpoint. MusicScope reports that limitation and keeps CSV import as the reliable path; see `docs/NETEASE_IMPORT.md`.

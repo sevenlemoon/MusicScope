@@ -30,7 +30,7 @@ as provenance.
 | Mode | Data | Timeline | Concert behavior |
 |---|---|---|---|
 | PERSONAL | Real imported library and timestamped history | Empty until timestamped history exists | Effective personal artists only; no fictional fallback |
-| DEMO | Deterministic catalog, history, and evidence periods | Explicitly available for the graduation walkthrough | Demo fixtures only when explicitly selected |
+| DEMO | Deterministic catalog, history, and evidence periods | Available through the seeded API/data path for the graduation walkthrough | Demo fixtures only when explicitly selected |
 
 The user IDs and API defaults are defined in `apps/api/app/constants.py`. The
 two modes are never merged.
@@ -72,8 +72,8 @@ query batching can be revisited later if much larger imports become a goal.
 4. Open For You: compare exploration 10, 50, and 90 and explain library
    rediscovery evidence.
 5. Open Timeline: show the personal timestamp-required empty state.
-6. Use the explicit DEMO path if historical Timeline evidence is needed.
-7. Search milet in Concerts; show the official result or the honest provider
-   unavailable state if live lookup is unavailable.
+6. Use the seeded DEMO API/data path if historical Timeline evidence is needed; there is no frontend personal/demo switch.
+7. Show the narrow milet official-provider concert showcase, or the honest
+   provider unavailable state if live lookup is unavailable.
 8. Open Lab and run the already validated vocals/instrumental separation
    smoke path with a permitted local audio file.

@@ -58,6 +58,7 @@ def refresh_relationships(db: Session, user_id: UUID) -> list[UserTrackRelations
         all_track_ids.add(membership.track_id)
 
     existing = {relation.track_id: relation for relation in db.scalars(select(UserTrackRelationship).where(UserTrackRelationship.user_id == user_id)).all()}
+    all_track_ids.update(existing)
     for track_id in all_track_ids:
         relation = existing.get(track_id) or UserTrackRelationship(user_id=user_id, track_id=track_id)
         events = sorted(active_by_track.get(track_id, []), key=lambda item: aware(item.played_at) or datetime.min.replace(tzinfo=timezone.utc))
@@ -94,6 +95,10 @@ def profile_features(db: Session, user_id: UUID, profile_type: str, as_of: datet
     if as_of:
         membership_query = membership_query.where(UserLibraryTrack.imported_at <= as_of)
     memberships = [] if profile_type == "short_term" else list(db.execute(membership_query).all())
+    unique_memberships: dict[UUID, tuple[UserLibraryTrack, Track, Artist]] = {}
+    for membership, track, artist in memberships:
+        unique_memberships.setdefault(track.id, (membership, track, artist))
+    memberships = list(unique_memberships.values())
     if not rows and not memberships:
         return {"schema_version": 1, "profile_type": profile_type, "summary": {}, "artists": [], "genres": []}, None, as_of
     artist_scores: dict[str, dict] = {}
@@ -136,20 +141,19 @@ def profile_features(db: Session, user_id: UUID, profile_type: str, as_of: datet
             if genre:
                 genre_scores[str(genre)] += 0.6
             seen_tracks.add(track.id)
-    artists = sorted(artist_scores.values(), key=lambda item: (-item["score"], item["name"]))[:10]
+    complete_artists = sorted(artist_scores.values(), key=lambda item: (-item["score"], item["name"]))
+    artists = complete_artists[:10]
     genres = [{"name": name, "score": round(score, 4)} for name, score in sorted(genre_scores.items(), key=lambda item: (-item[1], item[0]))[:10]]
-    features = {"schema_version": 1, "profile_type": profile_type, "summary": {"weighted_plays": round(total_weight, 4), "unique_tracks": len(seen_tracks), "unique_artists": len(artist_scores), "library_tracks": len(memberships), "favorites": favorites, "completion_rate": round(completed / max(1, included_events), 4), "skip_rate": round(skips / max(1, included_events), 4), "replays": recent_replays}, "artists": artists, "genres": genres, "parameters": {"recent_window_days": RECENT_WINDOW_DAYS, "recency_half_life_days": RECENCY_HALF_LIFE_DAYS, "library_membership_weight": 0.6}}
+    complete_genres = [{"name": name, "score": round(score, 4)} for name, score in sorted(genre_scores.items(), key=lambda item: (-item[1], item[0]))]
+    features = {"schema_version": 1, "profile_type": profile_type, "summary": {"weighted_plays": round(total_weight, 4), "unique_tracks": len(seen_tracks), "unique_artists": len(artist_scores), "library_tracks": len(unique_memberships), "favorites": favorites, "completion_rate": round(completed / included_events, 4) if included_events else None, "skip_rate": round(skips / included_events, 4) if included_events else None, "replays": recent_replays}, "artists": artists, "genres": genres, "artist_affinity": complete_artists, "genre_affinity": complete_genres, "parameters": {"recent_window_days": RECENT_WINDOW_DAYS, "recency_half_life_days": RECENCY_HALF_LIFE_DAYS, "library_membership_weight": 0.6}}
     return features, window_start, reference
 
 
 def calculate_profiles(db: Session, user_id: UUID, as_of: datetime | None = None, persist: bool = False) -> dict[str, ProfileSnapshot]:
     refresh_relationships(db, user_id)
-    effective = effective_events(db, user_id)
-    timestamps = [aware(event.played_at) for event, _, _ in effective if event.played_at]
-    reference = as_of or (max(timestamps) if timestamps else utc_now())
     snapshots: dict[str, ProfileSnapshot] = {}
     for profile_type in ("long_term", "short_term"):
-        features, start, end = profile_features(db, user_id, profile_type, reference)
+        features, start, end = profile_features(db, user_id, profile_type, as_of if as_of is not None else None)
         if persist:
             snapshot = db.scalar(select(ProfileSnapshot).where(ProfileSnapshot.user_id == user_id, ProfileSnapshot.profile_type == profile_type, ProfileSnapshot.window_start == start, ProfileSnapshot.window_end == end))
             if snapshot is None:

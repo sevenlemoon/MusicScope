@@ -3,7 +3,7 @@ from datetime import date, time
 from sqlalchemy import select
 from fastapi.testclient import TestClient
 
-from app.concerts import ConcertEventData, ConcertProviderError, MiletOfficialProvider, TicketmasterConcertProvider, deduplicate_events, lookup_artist_concerts
+from app.concerts import ConcertEventData, ConcertProviderError, MiletOfficialProvider, TicketmasterConcertProvider, deduplicate_events, lookup_artist_concerts, select_exact_attraction
 from app.constants import DEMO_USER_ID
 from app.db import SessionLocal
 from app.models import Artist
@@ -65,6 +65,12 @@ def test_provider_failure_does_not_fabricate_live_results(monkeypatch) -> None:
         assert result["events"] == []
     finally:
         db.close()
+
+
+def test_ticketmaster_requires_exact_normalized_attraction_match() -> None:
+    attractions = [{"name": "milet Official Fan Event"}, {"name": "Mile High Orchestra"}]
+    assert select_exact_attraction(attractions, "milet") is None
+    assert select_exact_attraction(attractions + [{"name": " Milet "}], "milet")["name"] == " Milet "
 
 
 def test_concert_endpoints_return_artist_and_relevant_events() -> None:

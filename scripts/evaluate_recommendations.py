@@ -2,15 +2,14 @@
 
 from collections import Counter
 from statistics import mean
-from uuid import UUID
-
 from sqlalchemy import select
 
 from app.db import SessionLocal
+from app.constants import DEMO_USER_ID
 from app.models import Artist, Track
 from app.recommendation import generate_recommendations
 
-DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_USER_ID = DEMO_USER_ID
 LEVELS = (10, 50, 90)
 
 

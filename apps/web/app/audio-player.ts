@@ -19,14 +19,20 @@ export class SynchronizedStemPlayer {
   private offset = 0;
   private startedAt = 0;
   private playing = false;
+  private endedSources = 0;
+  private playbackGeneration = 0;
 
   constructor(context: AudioContextPort) {
     this.context = context;
   }
 
   setBuffers(buffers: StemBuffers): void {
+    this.stopSources();
+    this.playing = false;
     this.buffers = buffers;
     this.offset = 0;
+    this.endedSources = 0;
+    this.playbackGeneration += 1;
   }
 
   get duration(): number {
@@ -54,6 +60,8 @@ export class SynchronizedStemPlayer {
     if (this.offset >= this.duration) this.offset = 0;
     await this.context.resume();
     const startAt = this.context.currentTime + 0.05;
+    const generation = ++this.playbackGeneration;
+    this.endedSources = 0;
     (Object.keys(this.buffers) as StemName[]).forEach((stem) => {
       const source = this.context.createBufferSource();
       const gain = this.context.createGain();
@@ -62,6 +70,15 @@ export class SynchronizedStemPlayer {
       source.connect(gain);
       gain.connect(this.context.destination);
       source.start(startAt, this.offset);
+      source.onended = () => {
+        if (generation !== this.playbackGeneration || !this.playing) return;
+        this.endedSources += 1;
+        if (this.endedSources >= 2) {
+          this.offset = this.duration;
+          this.playing = false;
+          this.stopSources();
+        }
+      };
       this.sources[stem] = source;
       this.gains[stem] = gain;
     });
@@ -92,6 +109,7 @@ export class SynchronizedStemPlayer {
   }
 
   private stopSources(): void {
+    this.playbackGeneration += 1;
     (Object.keys(this.sources) as StemName[]).forEach((stem) => {
       try {
         this.sources[stem]?.stop();

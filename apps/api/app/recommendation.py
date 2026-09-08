@@ -41,8 +41,8 @@ def clamp(value: float) -> float:
 
 
 def profile_maps(profile: dict) -> tuple[dict[str, float], dict[str, float]]:
-    artists = {item["artist_id"]: float(item["score"]) for item in profile.get("artists", [])}
-    genres = {item["name"]: float(item["score"]) for item in profile.get("genres", [])}
+    artists = {item["artist_id"]: float(item["score"]) for item in profile.get("artist_affinity", profile.get("artists", []))}
+    genres = {item["name"]: float(item["score"]) for item in profile.get("genre_affinity", profile.get("genres", []))}
     artist_max = max(artists.values(), default=1.0)
     genre_max = max(genres.values(), default=1.0)
     return ({key: value / artist_max for key, value in artists.items()}, {key: value / genre_max for key, value in genres.items()})
@@ -165,12 +165,20 @@ def select_diverse(candidates: list[Candidate], quota: dict[str, int], limit: in
     def diversity_genre(candidate: Candidate) -> str:
         return candidate.genre or f"unknown:{candidate.track.id}"
 
+    def allowed(candidate: Candidate) -> bool:
+        # Small libraries should still produce all available results.
+        artist_cap = 3 if len({item.artist.id for item in candidates}) >= 3 else limit
+        genre_cap = 5 if len({diversity_genre(item) for item in candidates}) >= 3 else limit
+        return artist_counts.get(candidate.artist.id, 0) < artist_cap and genre_counts.get(diversity_genre(candidate), 0) < genre_cap
+
     for role in ROLE_NAMES:
         while quota[role] and pools[role]:
             candidate = max(pools[role], key=lambda item: item.score - 0.08 * artist_counts.get(item.artist.id, 0) - 0.04 * genre_counts.get(diversity_genre(item), 0))
             pools[role].remove(candidate)
             quota[role] -= 1
             if candidate.track.id in used:
+                continue
+            if not allowed(candidate):
                 continue
             selected.append(candidate)
             used.add(candidate.track.id)
@@ -181,7 +189,7 @@ def select_diverse(candidates: list[Candidate], quota: dict[str, int], limit: in
     for candidate in sorted(remaining, key=lambda item: (-item.score, str(item.track.id))):
         if len(selected) >= limit:
             break
-        if artist_counts.get(candidate.artist.id, 0) >= 3 or genre_counts.get(diversity_genre(candidate), 0) >= 5:
+        if not allowed(candidate):
             continue
         selected.append(candidate)
         used.add(candidate.track.id)
